@@ -1,0 +1,62 @@
+name: Python CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v3
+
+      - name: set up Terraform
+        uses: hashicorp/setup-terraform@v1
+
+      - name: set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: install dependencies
+        run: |
+          cd extractor
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt \
+            --platform manylinux2014_x86_64 \
+            --target package \
+            --only-binary=:all:
+
+      - name: zip Lambda extractor
+        run: |
+          cd extractor/package
+          zip -r ../extractor.zip .
+          cd ..
+          zip -g extractor.zip config.py database.py homily_generator.py main.py scraper.py
+
+      - name: terraform apply
+        env:
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ${{ secrets.AWS_REGION }}
+        run: |
+          export TF_VAR_openai_api_key=$openai_api_key
+          export TF_VAR_aws_access_key_id=$aws_access_key_id
+          export TF_VAR_aws_secret_access_key=$aws_secret_access_key
+          export TF_VAR_aws_region=$aws_region
+          cd terraform/
+          terraform init
+          terraform plan
+          terraform apply -auto-approve
