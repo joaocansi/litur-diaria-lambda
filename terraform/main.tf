@@ -32,7 +32,7 @@ resource "aws_lambda_function" "liturgia_extractor_function" {
   environment {
     variables = {
       OPENAI_API_KEY = var.openai_api_key
-      MAILER_LAMBDA_NAME = aws_lambda_function.liturgia_extractor_function.function_name
+      MAILER_LAMBDA_NAME = aws_lambda_function.liturgia_mailer_function.function_name
     }
   }
 }
