@@ -5,6 +5,7 @@ terraform {
       version = "~> 4.0"
     }
   }
+
   backend "s3" {
     bucket         = "liturgia-terraform-state"
     key            = "terraform/state-lambda"
@@ -14,68 +15,81 @@ terraform {
 }
 
 provider "aws" {
-  region     = var.aws_region
-  access_key = var.aws_access_key_id
-  secret_key = var.aws_secret_access_key
+  region     = "us-east-1"
 }
 
-resource "aws_lambda_function" "extractor" {
-  function_name = "extractor"
+resource "aws_lambda_function" "liturgia_extractor_function" {
+  function_name = "liturgia_extractor"
   filename      = "../extractor/extractor.zip"
   handler       = "main.lambda_handler"
   runtime       = "python3.10"
-  role          = aws_iam_role.lambda_exec.arn
+  role          = aws_iam_role.liturgia_lambda_role.arn
 
   source_code_hash = filebase64sha256("../extractor/extractor.zip")
-
-  timeout = 300
+  timeout          = 300
 
   environment {
     variables = {
-      "OPENAI_API_KEY" = var.openai_api_key
+      OPENAI_API_KEY = var.openai_api_key
     }
   }
 }
 
-resource "aws_cloudwatch_event_rule" "daily_trigger" {
-  name                = "daily_trigger"
-  description         = "Trigger Lambda daily at 6am BR Time"
+resource "aws_lambda_function" "liturgia_mailer_function" {
+  function_name = "liturgia_mailer"
+  filename      = "../mailer/mailer.zip"
+  handler       = "main.lambda_handler"
+  runtime       = "python3.10"
+  role          = aws_iam_role.liturgia_lambda_role.arn
+
+  source_code_hash = filebase64sha256("../mailer/mailer.zip")
+  timeout          = 300
+
+  environment {
+    variables = {
+      MAILER_TOKEN  = var.mailer_token
+      MAILER_SENDER = var.mailer_sender
+    }
+  }
+}
+
+resource "aws_cloudwatch_event_rule" "liturgia_extractor_schedule" {
+  name                = "liturgia_extractor_schedule"
+  description         = "Trigger liturgia_extractor daily at 6 AM BRT (9 AM UTC)"
   schedule_expression = "cron(0 9 * * ? *)"
 }
 
-resource "aws_cloudwatch_event_target" "lambda_target" {
-  rule      = aws_cloudwatch_event_rule.daily_trigger.name
-  target_id = "lambda_target"
-  arn       = aws_lambda_function.extractor.arn
+resource "aws_cloudwatch_event_target" "liturgia_extractor_event_target" {
+  rule      = aws_cloudwatch_event_rule.liturgia_extractor_schedule.name
+  target_id = "liturgia_extractor_target"
+  arn       = aws_lambda_function.liturgia_extractor_function.arn
 }
 
-resource "aws_lambda_permission" "allow_cloudwatch" {
+resource "aws_lambda_permission" "liturgia_extractor_permission" {
   statement_id  = "AllowExecutionFromCloudWatch"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.extractor.function_name
+  function_name = aws_lambda_function.liturgia_extractor_function.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.daily_trigger.arn
+  source_arn    = aws_cloudwatch_event_rule.liturgia_extractor_schedule.arn
 }
 
-resource "aws_iam_role" "lambda_exec" {
-  name = "lambda_exec_role"
+resource "aws_iam_role" "liturgia_lambda_role" {
+  name = "liturgia_lambda_role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
+    Statement = [{
+      Action    = "sts:AssumeRole"
+      Effect    = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
       }
-    ]
+    }]
   })
 }
 
-resource "aws_iam_policy" "dynamodb_access_policy" {
-  name = "dynamodb_access_policy"
+resource "aws_iam_policy" "liturgia_lambda_custom_policy" {
+  name = "liturgia_lambda_custom_policy"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -94,14 +108,14 @@ resource "aws_iam_policy" "dynamodb_access_policy" {
   })
 }
 
-resource "aws_iam_policy_attachment" "lambda_exec_policy" {
-  name       = "lambda_exec_policy_attachment"
-  roles      = [aws_iam_role.lambda_exec.name]
+resource "aws_iam_policy_attachment" "liturgia_lambda_basic_execution" {
+  name       = "liturgia_lambda_basic_execution"
+  roles      = [aws_iam_role.liturgia_lambda_role.name]
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
-resource "aws_iam_policy_attachment" "dynamodb_access_policy_attachment" {
-  name       = "dynamodb_access_policy_attachment"
-  roles      = [aws_iam_role.lambda_exec.name]
-  policy_arn = aws_iam_policy.dynamodb_access_policy.arn
+resource "aws_iam_policy_attachment" "liturgia_lambda_custom_access" {
+  name       = "liturgia_lambda_custom_access"
+  roles      = [aws_iam_role.liturgia_lambda_role.name]
+  policy_arn = aws_iam_policy.liturgia_lambda_custom_policy.arn
 }

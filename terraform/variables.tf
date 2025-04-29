@@ -18,3 +18,13 @@ variable "aws_secret_access_key" {
   type      = string
   sensitive = true
 }
+
+variable "mailer_token" {
+  type = string
+  sensitive = true
+}
+
+variable "mailer_sender" {
+  type = string
+  sensitive = true
+}
