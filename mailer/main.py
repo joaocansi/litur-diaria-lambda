@@ -15,13 +15,13 @@ mailer_token = os.getenv('MAILER_TOKEN')
 mailer_sender = os.getenv('MAILER_SENDER')
 
 def lambda_handler(event, context):
-    liturgia = get_liturgia()
-    if liturgia is None:
+    if event is None or event['conteudo_html'] is None:
         return {
             "statusCode": 404,
             "body": "Liturgia not found"
         }
-        
+    
+    liturgia = event
     today = datetime.now().strftime("%d/%m/%Y")
     template = build_template(today, liturgia['conteudo_html'])
 

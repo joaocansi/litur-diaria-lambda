@@ -28,11 +28,11 @@ def lambda_handler(event, context):
             'titulo': titulo,
             'conteudo_html': reflexao
         }
-        # lambda_client.invoke(
-        #     FunctionName=os.getenv('MAILER_LAMBDA_NAME'),
-        #     InvocationType='Event',
-        #     Payload=json.dumps(payload)
-        # )
+        lambda_client.invoke(
+            FunctionName=os.getenv('MAILER_LAMBDA_NAME'),
+            InvocationType='Event',
+            Payload=json.dumps(payload)
+        )
         return { 'statusCode': 200, 'body': json.dumps('Homilia salva com sucesso!') }
     except Exception as e:
         return { 'statusCode': 500, 'body': json.dumps(str(e)) }

@@ -15,9 +15,10 @@ terraform {
 }
 
 provider "aws" {
-  region     = "us-east-1"
+  region = "us-east-1"
 }
 
+# Função Lambda responsável por extrair os dados da liturgia
 resource "aws_lambda_function" "liturgia_extractor_function" {
   function_name = "liturgia_extractor"
   filename      = "../extractor/extractor.zip"
@@ -25,8 +26,8 @@ resource "aws_lambda_function" "liturgia_extractor_function" {
   runtime       = "python3.10"
   role          = aws_iam_role.liturgia_lambda_role.arn
 
-  source_code_hash = filebase64sha256("../extractor/extractor.zip")
-  timeout          = 300
+  source_code_hash = filebase64sha256("../extractor/extractor.zip") # Garante que mudanças no código invalidem cache
+  timeout          = 300 # Timeout de 5 minutos
 
   environment {
     variables = {
@@ -35,6 +36,7 @@ resource "aws_lambda_function" "liturgia_extractor_function" {
   }
 }
 
+# Função Lambda responsável por enviar os e-mails
 resource "aws_lambda_function" "liturgia_mailer_function" {
   function_name = "liturgia_mailer"
   filename      = "../mailer/mailer.zip"
@@ -42,29 +44,33 @@ resource "aws_lambda_function" "liturgia_mailer_function" {
   runtime       = "python3.10"
   role          = aws_iam_role.liturgia_lambda_role.arn
 
-  source_code_hash = filebase64sha256("../mailer/mailer.zip")
-  timeout          = 300
+  source_code_hash = filebase64sha256("../mailer/mailer.zip") # Garante que mudanças no código invalidem cache
+  timeout          = 480 # Timeout de 8 minutos
 
   environment {
     variables = {
       MAILER_TOKEN  = var.mailer_token
       MAILER_SENDER = var.mailer_sender
+      MAILER_LAMBDA_NAME = aws_lambda_function.liturgia_extractor_function.function_name
     }
   }
 }
 
+# Regra de agendamento do CloudWatch para executar a função de extração diariamente às 9h UTC (6h BRT)
 resource "aws_cloudwatch_event_rule" "liturgia_extractor_schedule" {
   name                = "liturgia_extractor_schedule"
   description         = "Trigger liturgia_extractor daily at 6 AM BRT (9 AM UTC)"
   schedule_expression = "cron(0 9 * * ? *)"
 }
 
+# Associa a regra de evento à função Lambda de extração
 resource "aws_cloudwatch_event_target" "liturgia_extractor_event_target" {
   rule      = aws_cloudwatch_event_rule.liturgia_extractor_schedule.name
   target_id = "liturgia_extractor_target"
   arn       = aws_lambda_function.liturgia_extractor_function.arn
 }
 
+# Permite que o CloudWatch invoque a função Lambda
 resource "aws_lambda_permission" "liturgia_extractor_permission" {
   statement_id  = "AllowExecutionFromCloudWatch"
   action        = "lambda:InvokeFunction"
@@ -73,6 +79,7 @@ resource "aws_lambda_permission" "liturgia_extractor_permission" {
   source_arn    = aws_cloudwatch_event_rule.liturgia_extractor_schedule.arn
 }
 
+# Define o papel IAM para a execução das funções Lambda
 resource "aws_iam_role" "liturgia_lambda_role" {
   name = "liturgia_lambda_role"
 
@@ -88,6 +95,7 @@ resource "aws_iam_role" "liturgia_lambda_role" {
   })
 }
 
+# Política personalizada para acesso a recursos do DynamoDB e outras Lambdas
 resource "aws_iam_policy" "liturgia_lambda_custom_policy" {
   name = "liturgia_lambda_custom_policy"
 
@@ -108,12 +116,14 @@ resource "aws_iam_policy" "liturgia_lambda_custom_policy" {
   })
 }
 
+# Anexa a política básica de execução de Lambdas (logs no CloudWatch)
 resource "aws_iam_policy_attachment" "liturgia_lambda_basic_execution" {
   name       = "liturgia_lambda_basic_execution"
   roles      = [aws_iam_role.liturgia_lambda_role.name]
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# Anexa a política customizada criada anteriormente
 resource "aws_iam_policy_attachment" "liturgia_lambda_custom_access" {
   name       = "liturgia_lambda_custom_access"
   roles      = [aws_iam_role.liturgia_lambda_role.name]
